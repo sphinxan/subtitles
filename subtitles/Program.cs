@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 
 namespace subtitles
 {
@@ -9,19 +10,16 @@ namespace subtitles
     {
         public DateTime TimeStart;
         public DateTime TimeEnd;
-        public TimeSpan Duration; //продолжительность
-        //TimeSpan это буквально структура показывающая сколько времени прошло между двумя точками во времени. Если вычитать DateTime то оно будет TimeSpan.
 
-        public static Location Location;
+        public Location Location;
         public ConsoleColor Color;
-        
+
         public string Title;
 
-        public Subtitle(DateTime timeStart, DateTime timeEnd, string location, string color, string subtitle)
+        private Subtitle(DateTime timeStart, DateTime timeEnd, string location, string color, string subtitle)
         {
             TimeStart = timeStart;
             TimeEnd = timeEnd;
-            Duration = TimeEnd - TimeStart;
 
             Location = Location.FindLocation(location);
             Color = Colour.GetColour(color);
@@ -29,25 +27,12 @@ namespace subtitles
             Title = subtitle;
         }
 
-        public Subtitle(DateTime timeStart, DateTime timeEnd, string subtitle)
+        private Subtitle(DateTime timeStart, DateTime timeEnd, string subtitle)
         {
             TimeStart = timeStart;
             TimeEnd = timeEnd;
-            Duration = TimeEnd - TimeStart;
-            
+
             Title = subtitle;
-        }
-
-        public void ArrangeQueue()
-        {
-            var queue = ReadFile();
-
-            queue = (Queue<Subtitle>)queue.OrderBy(time => time.TimeStart); //((x, y) => x.CompareTo(y)));
-
-            while(queue.Count > 0)
-            {
-                Location.Queue.Enqueue(queue.Dequeue());
-            }
         }
 
         public static Queue<Subtitle> ReadFile()
@@ -55,7 +40,7 @@ namespace subtitles
             var queue = new Queue<Subtitle>();
             var file = new StreamReader("file.txt");
 
-            while(!file.EndOfStream)
+            while (!file.EndOfStream)
             {
                 queue.Enqueue(ReadSubtitle(file.ReadLine()));
             }
@@ -80,6 +65,7 @@ namespace subtitles
             else
                 return new Subtitle(timeStart, timeEnd, title[14..]);
         }
+
     }
 
 
@@ -89,8 +75,52 @@ namespace subtitles
         public static Location Left = new Location();
         public static Location Bottom = new Location();
         public static Location Right = new Location();
-        public Queue<Subtitle> Queue = new Queue<Subtitle>();
-        public string Str;
+        private Queue<Subtitle> Queue = new Queue<Subtitle>();
+        public ConsoleColor Color { get => Queue.Peek().Color; }
+        
+        private string currentText; //хранилище св-ва ниже (привет с маленькой буквы)
+        public string CurrentText 
+        {
+            get => currentText; //гет вызывается когда запрашивается значение. данные нужны нечасто, но часто обрабатываются. (Числа добавляют постоянно а значение нужно редко)
+
+            private set //Сет вызывается когда ты присваиваешь значение. данные запрашиваются часто но редко обрабатываются. (Числа добавляют редко, а значение запрашивают часто)
+            {
+                if (value.Length > 35) //value - и есть то присвоенное значение, из-за которого вазвался сет
+                    currentText = value.Substring(0, 35);
+                else
+                {
+                    if (this == Right) //является ли ссылка на самого себя ссылкой на Right
+                        currentText = value.PadLeft(35);
+                    else
+                        currentText = value.PadRight(35);
+                }
+            }
+        }
+
+        public void ProcessAllSubtitles()
+        {
+            while(Queue.Count > 0)
+            {
+                var text = Queue.Dequeue();
+                WaitUntil(text.TimeStart);
+                CurrentText = text.Title;
+                WaitUntil(text.TimeEnd);
+                CurrentText = string.Empty;
+            }
+        }
+
+        public void WaitUntil(DateTime time) => Thread.Sleep(time - DateTime.Now);
+
+        public static void ArrangeQueue(Queue<Subtitle> queue)
+        {
+            queue = (Queue<Subtitle>)queue.OrderBy(time => time.TimeStart);
+
+            for (int i = 0; i < queue.Count; i++)
+            {
+                var item = queue.Dequeue();
+                item.Location.Queue.Enqueue(item);
+            }
+        }
 
         public static Location FindLocation(string str) => str switch
         {
@@ -121,33 +151,46 @@ namespace subtitles
     {
         static void Main(string[] args)
         {
+            Location.ArrangeQueue(Subtitle.ReadFile());
             DrawFrame();
         }
 
         public static void DrawFrame()
         {
-            Console.Write("╔");
-            DrawPart("═", 50);
-            Console.WriteLine("╗");
+            DrawCentralSide('╔', Location.Top.CurrentText, Location.Top.Color, '╗');
             
-            for(int j = 1; j < 22; j++)
-            {
-                Console.Write("║");
-                DrawPart(" ", 50);
-                Console.WriteLine("║");
-            }
+            DrawSides();
+            WriteTitle(Location.Left.CurrentText, Location.Left.Color);
+            WriteTitle(Location.Right.CurrentText, Location.Right.Color);
+            DrawSides();
 
-            Console.Write("╚");
-            DrawPart("═", 50);
-            Console.Write("╝");
+            DrawCentralSide('╚', Location.Bottom.CurrentText, Location.Bottom.Color, '╝');
+        }
+        
+        public static void DrawCentralSide(char sym1, string text, ConsoleColor color, char sym2)
+        {
+            Console.Write(sym1);
+            Console.Write(new string('═', 8));
+            WriteTitle(text, color);
+            Console.Write(new string('═', 8));
+            Console.WriteLine(sym2);
         }
 
-        public static void DrawPart(string symbol, int num)
+        public static void DrawSides()
         {
-            for (int i = 0; i <= num; i++)
+            for (int j = 1; j < 10; j++)
             {
-                Console.Write(symbol);
+                Console.Write('║');
+                Console.Write(new string(' ', 50));
+                Console.WriteLine('║');
             }
+        }
+
+        public static void WriteTitle(string text, ConsoleColor color)
+        {
+            Console.ForegroundColor = color;
+            Console.Write(text);
+            Console.ResetColor();
         }
 
     }
