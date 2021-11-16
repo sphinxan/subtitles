@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace subtitles
 {
@@ -11,34 +12,29 @@ namespace subtitles
         public DateTime TimeStart;
         public DateTime TimeEnd;
 
+        public string Title;
+
         public Location Location;
         public ConsoleColor Color;
 
-        public string Title;
-
-        private Subtitle(DateTime timeStart, DateTime timeEnd, string location, string color, string subtitle)
+        private Subtitle(DateTime timeStart, DateTime timeEnd, string subtitle, string location = "Bottom", string color = "White")
         {
             TimeStart = timeStart;
             TimeEnd = timeEnd;
+
+            Title = subtitle;
 
             Location = Location.FindLocation(location);
             Color = Colour.GetColour(color);
-
-            Title = subtitle;
         }
 
-        private Subtitle(DateTime timeStart, DateTime timeEnd, string subtitle)
-        {
-            TimeStart = timeStart;
-            TimeEnd = timeEnd;
+        public static StreamReader FindFile() => File.Exists("file.txt") ? new StreamReader("file.txt") : throw new Exception("file does not exist");
 
-            Title = subtitle;
-        }
 
         public static Queue<Subtitle> ReadFile()
         {
             var queue = new Queue<Subtitle>();
-            var file = new StreamReader("file.txt");
+            var file = FindFile();
 
             while (!file.EndOfStream)
             {
@@ -52,15 +48,15 @@ namespace subtitles
         //00:07 - 00:15 Bill is a very motivated young man
         public static Subtitle ReadSubtitle(string title)
         {
-            DateTime timeStart = Convert.ToDateTime(title.Substring(0, 4));
-            DateTime timeEnd = Convert.ToDateTime(title.Substring(8, 12));
+            DateTime timeStart = Convert.ToDateTime(title[0..4]);
+            DateTime timeEnd = Convert.ToDateTime(title[8..12]);
 
             if (title.Contains('['))
             {
                 var info = title[(title.IndexOf('[') + 1)..(title.IndexOf(']') - 1)].Split(", ");
                 var subtitle = title[(title.IndexOf(']') + 2)..];
 
-                return new Subtitle(timeStart, timeEnd, info[0], info[1], subtitle);
+                return new Subtitle(timeStart, timeEnd, subtitle, info[0], info[1]);
             }
             else
                 return new Subtitle(timeStart, timeEnd, title[14..]);
@@ -109,15 +105,21 @@ namespace subtitles
             }
         }
 
-        public void WaitUntil(DateTime time) => Thread.Sleep(time - DateTime.Now);
+        public void WaitUntil(DateTime time)
+        {
+            try
+            {
+                Thread.Sleep(time - DateTime.Now);
+            }
+            catch { }
+        }
 
         public static void ArrangeQueue(Queue<Subtitle> queue)
         {
-            queue = (Queue<Subtitle>)queue.OrderBy(time => time.TimeStart);
+            var temp = queue.OrderBy(time => time.TimeStart);
 
-            for (int i = 0; i < queue.Count; i++)
+            foreach(var item in temp)
             {
-                var item = queue.Dequeue();
                 item.Location.Queue.Enqueue(item);
             }
         }
@@ -152,46 +154,60 @@ namespace subtitles
         static void Main(string[] args)
         {
             Location.ArrangeQueue(Subtitle.ReadFile());
-            DrawFrame();
-        }
 
-        public static void DrawFrame()
-        {
-            DrawCentralSide('╔', Location.Top.CurrentText, Location.Top.Color, '╗');
-            
-            DrawSides();
-            WriteTitle(Location.Left.CurrentText, Location.Left.Color);
-            WriteTitle(Location.Right.CurrentText, Location.Right.Color);
-            DrawSides();
-
-            DrawCentralSide('╚', Location.Bottom.CurrentText, Location.Bottom.Color, '╝');
-        }
-        
-        public static void DrawCentralSide(char sym1, string text, ConsoleColor color, char sym2)
-        {
-            Console.Write(sym1);
-            Console.Write(new string('═', 8));
-            WriteTitle(text, color);
-            Console.Write(new string('═', 8));
-            Console.WriteLine(sym2);
-        }
-
-        public static void DrawSides()
-        {
-            for (int j = 1; j < 10; j++)
+            var tasks = new Task[]
             {
-                Console.Write('║');
-                Console.Write(new string(' ', 50));
-                Console.WriteLine('║');
+                Task.Run(() => Location.Top.ProcessAllSubtitles()),
+                Task.Run(() => Location.Bottom.ProcessAllSubtitles()),
+                Task.Run(() => Location.Left.ProcessAllSubtitles()),
+                Task.Run(() => Location.Right.ProcessAllSubtitles()),
+            };
+
+            while(!tasks.All(task => task.IsCompleted))
+            {
+                DrawFrame();
             }
         }
 
-        public static void WriteTitle(string text, ConsoleColor color)
+        private static void DrawFrame()
         {
+            Console.WriteLine("╔" + new string('═', 74) + "╗");
+            WriteTitle(Location.Top.CurrentText, Location.Top.Color, Position.Middle);
+
+            DrawSides();
+            WriteTitle(Location.Left.CurrentText, Location.Left.Color, Position.Left);
+            WriteTitle(Location.Right.CurrentText, Location.Right.Color, Position.Right);
+            DrawSides();
+
+            WriteTitle(Location.Bottom.CurrentText, Location.Bottom.Color, Position.Middle);
+            Console.WriteLine("╚" + new string('═', 74) + "╝");
+
+        }
+
+        private static void DrawSides()
+        {
+            for (int j = 1; j < 15; j++)
+                Console.WriteLine("║" + new string(' ', 74) + "║");
+        }
+
+        private static void WriteTitle(string text, ConsoleColor color, Position side)
+        {
+            if(side == Position.Left || side == Position.Middle)
+                Console.Write("║");
+            
             Console.ForegroundColor = color;
             Console.Write(text);
             Console.ResetColor();
-        }
 
+            if (side == Position.Right || side == Position.Middle)
+                Console.WriteLine("║");
+
+        }
+        private enum Position
+        {
+            Left,
+            Right,
+            Middle
+        }
     }
 }
