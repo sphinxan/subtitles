@@ -97,11 +97,12 @@ namespace subtitles
         {
             while(Queue.Count > 0)
             {
-                var text = Queue.Dequeue();
+                var text = Queue.Peek();
                 WaitUntil(text.TimeStart);
                 CurrentText = text.Title;
                 WaitUntil(text.TimeEnd);
                 CurrentText = string.Empty;
+                Queue.Dequeue();
             }
         }
 
